@@ -2,41 +2,90 @@
 
 **Visual Anti-Cheat System for ESP/Wallhack Detection**
 
-합성 데이터 생성 + YOLOv11을 활용한 ESP 핵 오버레이 탐지 시스템.
+A deep learning-based system that detects ESP (Extra Sensory Perception) hack overlays in game footage using synthetic data generation and object detection models.
 
 ---
 
 ## Overview
 
-ESP 핵은 벽 너머 적 위치를 빨간 박스로 보여주는 치트인데, 실제 핵 영상 수집이 어려워서 합성 데이터로 학습시키는 방식을 사용함.
+ESP hacks display enemy positions through walls using visual overlays (red boxes, health bars, etc.). Since collecting real hack data is legally/ethically difficult, this project generates synthetic training data by simulating ESP overlays on clean gameplay footage.
 
-**동작 원리:**
-1. 정상 게임 영상에서 사람 탐지 (YOLOv11 pretrained)
-2. 탐지된 사람 위에 가짜 ESP 오버레이 그리기
-3. 그 오버레이 좌표를 YOLO 라벨로 저장
-4. 이걸로 모델 학습 → ESP 오버레이만 찾아냄
+**How it works:**
+1. Detect `person` objects in clean gameplay using pretrained YOLOv11
+2. Draw fake ESP overlays (red/green boxes) on detected persons
+3. Save overlay coordinates as YOLO labels
+4. Train model to detect these overlay patterns
+5. Deploy for real-time cheat detection
 
 ---
 
 ## Detection Results
 
-### ESP 탐지 예시
+### Real-time ESP Detection
 
-![Detection Result](runs/detect/new_sample_800.jpg)
+![Detection Result](runs/detect/test_detection.jpg)
 
-상단에 `CHEAT DETECTED - ESP OVERLAY IDENTIFIED` 경고 배너가 뜨고, ESP 오버레이가 `ILLEGAL 0.54`로 탐지됨.
+Multiple ESP overlays detected simultaneously (`ESP 0.48`, `ESP 0.55`) with warning banner displayed.
 
 ### Training Data Sample
 
 ![Training Batch](runs/esp_detector_20251223_112005/train_batch0.jpg)
 
-합성 생성된 ESP 오버레이가 포함된 학습 데이터. 모자이크 증강 적용됨.
+Synthetic ESP overlays with mosaic augmentation applied during training.
 
 ### Validation Results
 
 ![Validation](runs/esp_detector_20251223_112005/val_batch0_pred.jpg)
 
-검증 데이터에서 `esp_overlay 1.0`, `esp_overlay 0.9` 등 높은 신뢰도로 탐지됨.
+High confidence detections (`esp_overlay 1.0`, `esp_overlay 0.9`) on validation set.
+
+---
+
+## Model Comparison
+
+Four models were trained and evaluated on the same dataset with focus on **False Positive Rate** and **Speed**.
+
+### Performance Summary
+
+![Model Comparison](docs/model_comparison.png)
+
+### Benchmark Results
+
+| Model | Precision | Recall | F1 Score | False Positives | FP Rate | Inference | FPS |
+|-------|-----------|--------|----------|-----------------|---------|-----------|-----|
+| **YOLOv8n** | 95.7% | 95.7% | 95.7% | 1 | 0.9% | 8.1ms | **124** |
+| **YOLOv10n** | 100% | 69.6% | 82.0% | 0 | **0.0%** | 9.8ms | 102 |
+| **YOLOv11n** | 95.5% | 91.3% | 93.4% | 1 | 0.9% | 10.2ms | 98 |
+| **RT-DETR-l** | 100% | 100% | **100%** | 0 | **0.0%** | 29.4ms | 34 |
+
+### Confusion Matrix
+
+| Model | TP | FP | TN | FN |
+|-------|----|----|----|----|
+| YOLOv8n | 22 | 1 | 106 | 1 |
+| YOLOv10n | 16 | 0 | 107 | 7 |
+| YOLOv11n | 21 | 1 | 106 | 2 |
+| RT-DETR-l | 23 | 0 | 107 | 0 |
+
+### Test Video Results (1920x1080 @ 60fps)
+
+| Model | Detection Frames | Detection Rate | Inference | FPS |
+|-------|------------------|----------------|-----------|-----|
+| **YOLOv8n** | 261/1800 | 14.5% | 8.07ms | **124** |
+| YOLOv10n | 162/1800 | 9.0% | 9.78ms | 102 |
+| YOLOv11n | 227/1800 | 12.6% | 10.23ms | 98 |
+| RT-DETR-l | 273/1800 | **15.2%** | 29.38ms | 34 |
+
+---
+
+## Model Recommendations
+
+| Use Case | Recommended Model | Reason |
+|----------|-------------------|--------|
+| **Real-time Monitoring** | YOLOv8n | Fastest (124 FPS), FP rate < 1% |
+| **Zero False Positives** | YOLOv10n or RT-DETR | 0% FP rate guaranteed |
+| **Offline Replay Analysis** | RT-DETR-l | Perfect accuracy (100%/100%) |
+| **Balanced Performance** | YOLOv11n | Latest architecture, good trade-off |
 
 ---
 
@@ -45,24 +94,27 @@ ESP 핵은 벽 너머 적 위치를 빨간 박스로 보여주는 치트인데, 
 ```
 Project_GD/
 ├── data/
-│   ├── raw/                    # 원본 게임 영상
-│   └── synthetic/              # 합성 학습 데이터
+│   ├── raw/                    # Source gameplay videos
+│   └── synthetic/              # Generated training data
 │       ├── images/train/
 │       ├── images/val/
 │       ├── labels/train/
 │       └── labels/val/
 ├── docs/
-│   ├── README_KR.md            # 한글 문서
+│   ├── MODEL_COMPARISON.md     # Detailed model analysis
 │   ├── TECHNICAL_DOCUMENTATION.md
-│   └── AI_ML_BEST_PRACTICES.md
+│   ├── AI_ML_BEST_PRACTICES.md
+│   └── README_KR.md            # Korean documentation
 ├── runs/
-│   ├── esp_detector_*/         # 학습 결과
-│   │   └── weights/best.pt
-│   └── detect/                 # 추론 결과
+│   ├── yolov8n_esp/            # YOLOv8n training results
+│   ├── yolov10n_esp/           # YOLOv10n training results
+│   ├── esp_detector_*/         # YOLOv11n training results
+│   ├── rtdetr_esp/             # RT-DETR training results
+│   └── detect/                 # Inference outputs
 ├── src/
-│   ├── generator.py            # 합성 데이터 생성
-│   ├── train.py                # 모델 학습
-│   ├── inference.py            # 추론
+│   ├── generator.py            # Synthetic data generation
+│   ├── train.py                # Model training
+│   ├── inference.py            # Real-time detection
 │   └── utils/
 └── requirements.txt
 ```
@@ -71,7 +123,7 @@ Project_GD/
 
 ## Quick Start
 
-### 1. Setup
+### 1. Setup Environment
 
 ```bash
 conda create -n DG python=3.10 -y
@@ -85,16 +137,23 @@ pip install -r requirements.txt
 python -m src.generator --video "data/raw/gameplay.mp4" --frame-skip 3 --max-frames 800
 ```
 
-### 3. Train
+### 3. Train Model
 
 ```bash
+# YOLOv8n (recommended for speed)
+python -c "from ultralytics import YOLO; YOLO('yolov8n.pt').train(data='runs/data.yaml', epochs=15)"
+
+# YOLOv11n
 python -m src.train --epochs 15 --batch 16
+
+# RT-DETR (recommended for accuracy)
+python -c "from ultralytics import RTDETR; RTDETR('rtdetr-l.pt').train(data='runs/data.yaml', epochs=15, batch=8)"
 ```
 
-### 4. Inference
+### 4. Run Inference
 
 ```bash
-python -m src.inference --video "data/raw/gameplay.mp4" --output "runs/detect/result.mp4"
+python -m src.inference --video "data/raw/test.mp4" --output "runs/detect/result.mp4"
 ```
 
 ---
@@ -105,9 +164,10 @@ python -m src.inference --video "data/raw/gameplay.mp4" --output "runs/detect/re
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--video` | Video path | - |
+| `--video` | Input video path | - |
 | `--frame-skip` | Extract every Nth frame | 5 |
-| `--max-frames` | Max frames to process | All |
+| `--max-frames` | Maximum frames to process | All |
+| `--input-dir` | Directory with videos | data/raw |
 
 ### Training
 
@@ -116,44 +176,54 @@ python -m src.inference --video "data/raw/gameplay.mp4" --output "runs/detect/re
 | `--epochs` | Training epochs | 10 |
 | `--batch` | Batch size | 16 |
 | `--imgsz` | Image size | 640 |
+| `--resume` | Resume from checkpoint | False |
 
 ### Inference
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--video` | Input video | (required) |
-| `--model` | Model path | Auto-detect latest |
+| `--video` | Input video path | (required) |
+| `--model` | Model weights path | Auto-detect latest |
+| `--output` | Output video path | Auto-generate |
 | `--conf` | Confidence threshold | 0.25 |
-
----
-
-## Performance
-
-| Metric | Value |
-|--------|-------|
-| mAP@50 | 81.5% |
-| Precision | 99.5% |
-| Recall | 72.4% |
-| Inference Time | ~10ms |
-| Real-time FPS | 100+ |
 
 ---
 
 ## Key Techniques
 
-- **Transfer Learning**: YOLOv11n pretrained on COCO, fine-tuned for ESP overlay detection
-- **Synthetic Data**: Generate fake ESP overlays on clean gameplay footage
-- **Negative Sampling**: 50% clean frames to reduce false positives
+- **Transfer Learning**: Fine-tune pretrained YOLO/DETR models on synthetic ESP data
+- **Synthetic Data Generation**: Simulate ESP overlays using OpenCV on clean gameplay
+- **Negative Sampling**: 50% clean frames to minimize false positives
 - **Data Augmentation**: Random colors, thickness, styles, coordinate jitter
+- **Multi-model Comparison**: YOLOv8, YOLOv10, YOLOv11, RT-DETR benchmarking
+
+---
+
+## Training Environment
+
+| Component | Specification |
+|-----------|---------------|
+| GPU | NVIDIA TITAN RTX (24GB) |
+| Dataset | 580 train / 130 val images |
+| Epochs | 15 |
+| Batch Size | 16 (YOLO) / 8 (DETR) |
+| Image Size | 640x640 |
 
 ---
 
 ## Documentation
 
-- [한글 README](docs/README_KR.md)
+- [Model Comparison Analysis](docs/MODEL_COMPARISON.md)
 - [Technical Documentation](docs/TECHNICAL_DOCUMENTATION.md)
 - [AI/ML Best Practices](docs/AI_ML_BEST_PRACTICES.md)
+- [Korean Documentation](docs/README_KR.md)
 
 ---
 
-Project: G-Vision Sentinel v1.0.0
+## License
+
+This project is developed for research and educational purposes.
+
+---
+
+**Project:** G-Vision Sentinel v1.0.0
